@@ -18,8 +18,6 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind(("0.0.0.0", args.port)).await?;
     println!("Listening on 0.0.0.0:{}", args.port);
 
-    // For the skeleton we keep a single shared OrderBook per instrument map protected by a Mutex
-    // (easy to reason about). Later you'll split/shard to single-writer-per-book for performance.
     let books = Arc::new(Mutex::new(std::collections::HashMap::<u32, OrderBook>::new()));
 
     loop {
@@ -39,7 +37,6 @@ async fn handle_client(stream: &mut TcpStream, books: Arc<Mutex<std::collections
     loop {
         let n = stream.read(&mut buf).await?;
         if n == 0 { break; }
-        // We accept newline-delimited JSON messages for the skeleton.
         let slice = &buf[..n];
         if let Ok(s) = std::str::from_utf8(slice) {
             for line in s.lines() {
@@ -52,7 +49,6 @@ async fn handle_client(stream: &mut TcpStream, books: Arc<Mutex<std::collections
                                 let book = map.entry(no.instrument).or_insert_with(OrderBook::new);
                                 let trades = book.on_new_order(no);
                                 if !trades.is_empty() {
-                                    // In a real engine, you'd send trade callbacks back; here we just log
                                     for t in trades {
                                         println!("TRADE price={} qty={} resting={:?} incoming={}", t.0, t.1, t.2, t.3);
                                     }
