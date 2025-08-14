@@ -1,4 +1,5 @@
 use clap::Parser;
+use core_affinity;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -30,40 +31,49 @@ async fn main() -> anyhow::Result<()> {
         let shard = (instrument as usize) % NUM_SHARDS;
         shard_instruments[shard].push(instrument);
     }
+    let cores = core_affinity::get_core_ids().unwrap();
     for shard_id in 0..NUM_SHARDS {
         let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
         shard_senders.push(tx);
         let instruments = shard_instruments[shard_id].clone();
-        tokio::spawn(async move {
-            let mut books: HashMap<u32, OrderBook> = HashMap::new();
-            // Preallocate order books for assigned instruments
-            for &inst in &instruments {
-                books.insert(inst, OrderBook::new());
-            }
-            while let Some(msg) = rx.recv().await {
-                match msg {
-                    Message::NewOrder(no) => {
-                        let book = books.entry(no.instrument).or_insert_with(OrderBook::new);
-                        let trades = book.on_new_order(no);
-                        if !trades.is_empty() {
-                            for t in trades {
-                                println!(
-                                    "[shard {}] TRADE price={} qty={} resting={:?} incoming={}",
-                                    shard_id, t.0, t.1, t.2, t.3
-                                );
+        let core_id = cores[shard_id % cores.len()];
+        std::thread::spawn(move || {
+            core_affinity::set_for_current(core_id);
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async move {
+                let mut books: HashMap<u32, OrderBook> = HashMap::new();
+                // Preallocate order books for assigned instruments
+                for &inst in &instruments {
+                    books.insert(inst, OrderBook::new());
+                }
+                while let Some(msg) = rx.recv().await {
+                    match msg {
+                        Message::NewOrder(no) => {
+                            let book = books.entry(no.instrument).or_insert_with(OrderBook::new);
+                            let trades = book.on_new_order(no);
+                            if !trades.is_empty() {
+                                for t in trades {
+                                    println!(
+                                        "[shard {}] TRADE price={} qty={} resting={:?} incoming={}",
+                                        shard_id, t.0, t.1, t.2, t.3
+                                    );
+                                }
                             }
                         }
-                    }
-                    Message::Cancel(c) => {
-                        if let Some(book) = books.get_mut(&c.instrument) {
-                            let removed = book.on_cancel(c);
-                            if removed {
-                                println!("[shard {}] Cancelled", shard_id);
+                        Message::Cancel(c) => {
+                            if let Some(book) = books.get_mut(&c.instrument) {
+                                let removed = book.on_cancel(c);
+                                if removed {
+                                    println!("[shard {}] Cancelled", shard_id);
+                                }
                             }
                         }
                     }
                 }
-            }
+            });
         });
     }
 
