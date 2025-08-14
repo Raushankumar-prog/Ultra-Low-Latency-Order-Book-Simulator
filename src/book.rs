@@ -1,5 +1,7 @@
 use crate::protocol::*;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
+mod order_ring_buffer;
+use order_ring_buffer::OrderRingBuffer;
 
 #[repr(align(64))]
 #[derive(Debug)]
@@ -13,8 +15,8 @@ pub struct Order {
 #[repr(align(64))]
 #[derive(Debug, Default)]
 pub struct OrderBook {
-    bids: BTreeMap<u64, VecDeque<Order>>,
-    asks: BTreeMap<u64, VecDeque<Order>>,
+    bids: BTreeMap<u64, OrderRingBuffer<64>>,
+    asks: BTreeMap<u64, OrderRingBuffer<64>>,
     id_index: HashMap<u64, (Side, u64)>,
 }
 
@@ -79,7 +81,7 @@ impl OrderBook {
                     };
                     self.bids
                         .entry(no.price)
-                        .or_insert_with(VecDeque::new)
+                        .or_insert_with(OrderRingBuffer::new)
                         .push_back(order);
                     self.id_index.insert(no.order_id, (Side::Buy, no.price));
                 }
@@ -133,7 +135,7 @@ impl OrderBook {
                     };
                     self.asks
                         .entry(no.price)
-                        .or_insert_with(VecDeque::new)
+                        .or_insert_with(OrderRingBuffer::new)
                         .push_back(order);
                     self.id_index.insert(no.order_id, (Side::Sell, no.price));
                 }
@@ -149,13 +151,23 @@ impl OrderBook {
                 Side::Sell => &mut self.asks,
             };
             if let Some(q) = map.get_mut(&price) {
-                let mut idx = 0usize;
-                while idx < q.len() {
-                    if q[idx].order_id == cancel.order_id {
-                        q.remove(idx);
-                        return true;
+                // Linear scan for cancel
+                let mut found = false;
+                for _ in 0..q.len() {
+                    if let Some(front) = q.front_mut() {
+                        if front.order_id == cancel.order_id {
+                            q.pop_front();
+                            found = true;
+                            break;
+                        } else {
+                            // rotate
+                            let order = q.pop_front().unwrap();
+                            q.push_back(order);
+                        }
                     }
-                    idx += 1;
+                }
+                if found {
+                    return true;
                 }
             }
         }
