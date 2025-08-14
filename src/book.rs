@@ -1,6 +1,7 @@
 use crate::protocol::*;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
+#[repr(align(64))]
 #[derive(Debug)]
 pub struct Order {
     pub order_id: u64,
@@ -9,6 +10,7 @@ pub struct Order {
     pub qty: u64,
 }
 
+#[repr(align(64))]
 #[derive(Debug, Default)]
 pub struct OrderBook {
     bids: BTreeMap<u64, VecDeque<Order>>,
