@@ -1,5 +1,7 @@
 use clap::Parser;
 use core_affinity;
+use log::{error, info};
+use simplemetrics::{counter, register_counter};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -15,9 +17,22 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
+    register_counter!("orders_total");
+    register_counter!("cancels_total");
+    register_counter!("trades_total");
     let args = Args::parse();
     let listener = TcpListener::bind(("0.0.0.0", args.port)).await?;
-    println!("Listening on 0.0.0.0:{}", args.port);
+    info!("Listening on 0.0.0.0:{}", args.port);
+
+    // Health check HTTP endpoint
+    std::thread::spawn(|| {
+        use tiny_http::{Response, Server};
+        let server = Server::http("0.0.0.0:8081").unwrap();
+        for rq in server.incoming_requests() {
+            rq.respond(Response::from_string("OK")).unwrap();
+        }
+    });
 
     // Sharding setup
     const NUM_SHARDS: usize = 4; // Set to number of CPU cores or desired shards
@@ -49,14 +64,19 @@ async fn main() -> anyhow::Result<()> {
                 for &inst in &instruments {
                     books.insert(inst, OrderBook::new());
                 }
+                // Try to load snapshot (stub)
+                // TODO: implement real snapshot loading
+                // if let Ok(snapshot) = std::fs::read("orderbook_snapshot.bin") { ... }
                 while let Some(msg) = rx.recv().await {
                     match msg {
                         Message::NewOrder(no) => {
+                            counter!("orders_total", 1);
                             let book = books.entry(no.instrument).or_insert_with(OrderBook::new);
                             let trades = book.on_new_order(no);
                             if !trades.is_empty() {
+                                counter!("trades_total", trades.len() as u64);
                                 for t in trades {
-                                    println!(
+                                    info!(
                                         "[shard {}] TRADE price={} qty={} resting={:?} incoming={}",
                                         shard_id, t.0, t.1, t.2, t.3
                                     );
@@ -64,14 +84,18 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
                         Message::Cancel(c) => {
+                            counter!("cancels_total", 1);
                             if let Some(book) = books.get_mut(&c.instrument) {
                                 let removed = book.on_cancel(c);
                                 if removed {
-                                    println!("[shard {}] Cancelled", shard_id);
+                                    info!("[shard {}] Cancelled", shard_id);
                                 }
                             }
                         }
                     }
+                    // Periodically snapshot (stub)
+                    // TODO: implement real snapshotting
+                    // if time_to_snapshot { std::fs::write("orderbook_snapshot.bin", ...); }
                 }
             });
         });
