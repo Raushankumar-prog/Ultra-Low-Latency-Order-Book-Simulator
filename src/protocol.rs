@@ -1,5 +1,16 @@
+use bincode;
+impl Message {
+    pub fn to_binary(&self) -> Vec<u8> {
+        bincode::serialize(self).expect("Failed to serialize Message to binary")
+    }
+
+    pub fn from_binary(bytes: &[u8]) -> Self {
+        bincode::deserialize(bytes).expect("Failed to deserialize Message from binary")
+    }
+}
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
     NewOrder(NewOrder),
     Cancel(Cancel),
