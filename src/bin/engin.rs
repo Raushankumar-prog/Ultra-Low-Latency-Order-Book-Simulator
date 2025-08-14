@@ -23,11 +23,23 @@ async fn main() -> anyhow::Result<()> {
     use std::collections::HashMap;
     use tokio::sync::mpsc;
     let mut shard_senders = Vec::new();
+    // Preallocate order books for all instruments (example: 1000 instruments, evenly across shards)
+    const NUM_INSTRUMENTS: u32 = 1000;
+    let mut shard_instruments: Vec<Vec<u32>> = vec![Vec::new(); NUM_SHARDS];
+    for instrument in 0..NUM_INSTRUMENTS {
+        let shard = (instrument as usize) % NUM_SHARDS;
+        shard_instruments[shard].push(instrument);
+    }
     for shard_id in 0..NUM_SHARDS {
         let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
         shard_senders.push(tx);
+        let instruments = shard_instruments[shard_id].clone();
         tokio::spawn(async move {
             let mut books: HashMap<u32, OrderBook> = HashMap::new();
+            // Preallocate order books for assigned instruments
+            for &inst in &instruments {
+                books.insert(inst, OrderBook::new());
+            }
             while let Some(msg) = rx.recv().await {
                 match msg {
                     Message::NewOrder(no) => {
