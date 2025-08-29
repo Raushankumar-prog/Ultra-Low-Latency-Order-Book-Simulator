@@ -1,7 +1,7 @@
 use orderbook::book::OrderBook;
 use orderbook::protocol::{Cancel, NewOrder, Side};
 
-// ...existing code...
+
 fn test_limit_order_match() {
     let mut ob = OrderBook::new();
     let sell = NewOrder {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
-/// A simple hybrid spin/yield queue for ultra-low latency single-producer, single-consumer scenarios.
+  
 pub struct SpinYieldQueue<T> {
     queue: crossbeam_queue::SegQueue<T>,
     size: AtomicUsize,
