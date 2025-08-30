@@ -1,10 +1,10 @@
 use tokio::net::TcpStream;
 
 
-struct Order {
-    order_type: String,
-    price: u64,
-    quantity: u32,
+pub struct Order {
+   pub  order_type: String,
+   pub  price: u64,
+   pub  quantity: u32,
 }
 
 
@@ -39,7 +39,7 @@ pub async fn connection()->anyhow::Result<String,String>{
                  loop{
                     match socket.read_exact(&buf).await{
                         ok(_)=>{
-                          parse_order(&buf);
+                        let order= parse_order(&buf);
                         }
                         Err(e)=>{
                       eprintln!("Connection closed or error: {:?}", e);

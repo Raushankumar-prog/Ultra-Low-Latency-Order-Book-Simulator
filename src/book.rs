@@ -1,23 +1,10 @@
-use crate::protocol::*;
-use std::collections::{BTreeMap, HashMap};
-mod order_ring_buffer;
-use order_ring_buffer::OrderRingBuffer;
+use std::collections::BTreeMap;
+use crate::connection::Order;
 
-#[repr(align(64))]
-#[derive(Debug)]
-pub struct Order {
-    pub order_id: u64,
-    pub side: Side,
-    pub price: u64,
-    pub qty: u64,
-}
-
-#[repr(align(64))]
 #[derive(Debug, Default)]
 pub struct OrderBook {
-    bids: BTreeMap<u64, OrderRingBuffer<64>>,
-    asks: BTreeMap<u64, OrderRingBuffer<64>>,
-    id_index: HashMap<u64, (Side, u64)>,
+    bids: BTreeMap<u64, u32>, 
+    asks: BTreeMap<u64, u32>, 
 }
 
 impl OrderBook {
@@ -25,152 +12,65 @@ impl OrderBook {
         Self {
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
-            id_index: HashMap::new(),
         }
     }
 
-    pub fn on_new_order(&mut self, no: NewOrder) -> Vec<(u64, u64, Option<u64>, u64)> {
-        let mut trades = Vec::new();
-        let mut remaining = no.qty;
-        match no.side {
-            Side::Buy => {
-                let mut to_remove_prices = Vec::new();
-                let asks_iter: Vec<u64> = self.asks.keys().cloned().collect();
-                for &ask_price in &asks_iter {
-                    if remaining == 0 {
-                        break;
+    pub fn bid(&mut self, price: u64, mut qty: u32) {
+        while qty > 0 {
+            if let Some((&ask_price, &ask_qty)) = self.asks.iter().next() {
+                if price >= ask_price {
+                    let trade_qty = qty.min(ask_qty);
+                    println!("Trade: {} @ {}", trade_qty, ask_price);
+
+                    if ask_qty > trade_qty {
+                        self.asks.insert(ask_price, ask_qty - trade_qty);
+                    } else {
+                        self.asks.remove(&ask_price);
                     }
-                    if ask_price > no.price {
-                        break;
-                    }
-                    if let Some(q) = self.asks.get_mut(&ask_price) {
-                        while let Some(resting) = q.front_mut() {
-                            if remaining == 0 {
-                                break;
-                            }
-                            let trade_qty = remaining.min(resting.qty);
-                            trades.push((
-                                ask_price,
-                                trade_qty,
-                                Some(resting.order_id),
-                                no.order_id,
-                            ));
-                            resting.qty -= trade_qty;
-                            remaining -= trade_qty;
-                            if resting.qty == 0 {
-                                let finished = q.pop_front();
-                                if let Some(f) = finished {
-                                    self.id_index.remove(&f.order_id);
-                                }
-                            }
-                        }
-                        if q.is_empty() {
-                            to_remove_prices.push(ask_price);
-                        }
-                    }
+
+                    qty -= trade_qty;
+                } else {
+                    break;
                 }
-                for p in to_remove_prices {
-                    self.asks.remove(&p);
-                }
-                if remaining > 0 {
-                    let order = Order {
-                        order_id: no.order_id,
-                        side: Side::Buy,
-                        price: no.price,
-                        qty: remaining,
-                    };
-                    self.bids
-                        .entry(no.price)
-                        .or_insert_with(OrderRingBuffer::new)
-                        .push_back(order);
-                    self.id_index.insert(no.order_id, (Side::Buy, no.price));
-                }
-            }
-            Side::Sell => {
-                let mut to_remove_prices = Vec::new();
-                let mut bid_prices: Vec<u64> = self.bids.keys().cloned().collect();
-                bid_prices.sort_unstable_by(|a, b| b.cmp(a));
-                for &bid_price in &bid_prices {
-                    if remaining == 0 {
-                        break;
-                    }
-                    if bid_price < no.price {
-                        break;
-                    }
-                    if let Some(q) = self.bids.get_mut(&bid_price) {
-                        while let Some(resting) = q.front_mut() {
-                            if remaining == 0 {
-                                break;
-                            }
-                            let trade_qty = remaining.min(resting.qty);
-                            trades.push((
-                                bid_price,
-                                trade_qty,
-                                Some(resting.order_id),
-                                no.order_id,
-                            ));
-                            resting.qty -= trade_qty;
-                            remaining -= trade_qty;
-                            if resting.qty == 0 {
-                                let finished = q.pop_front();
-                                if let Some(f) = finished {
-                                    self.id_index.remove(&f.order_id);
-                                }
-                            }
-                        }
-                        if q.is_empty() {
-                            to_remove_prices.push(bid_price);
-                        }
-                    }
-                }
-                for p in to_remove_prices {
-                    self.bids.remove(&p);
-                }
-                if remaining > 0 {
-                    let order = Order {
-                        order_id: no.order_id,
-                        side: Side::Sell,
-                        price: no.price,
-                        qty: remaining,
-                    };
-                    self.asks
-                        .entry(no.price)
-                        .or_insert_with(OrderRingBuffer::new)
-                        .push_back(order);
-                    self.id_index.insert(no.order_id, (Side::Sell, no.price));
-                }
+            } else {
+                break;
             }
         }
-        trades
+
+        if qty > 0 {
+            *self.bids.entry(price).or_insert(0) += qty;
+        }
     }
 
-    pub fn on_cancel(&mut self, cancel: Cancel) -> bool {
-        if let Some((side, price)) = self.id_index.remove(&cancel.order_id) {
-            let map = match side {
-                Side::Buy => &mut self.bids,
-                Side::Sell => &mut self.asks,
-            };
-            if let Some(q) = map.get_mut(&price) {
-                // Linear scan for cancel
-                let mut found = false;
-                for _ in 0..q.len() {
-                    if let Some(front) = q.front_mut() {
-                        if front.order_id == cancel.order_id {
-                            q.pop_front();
-                            found = true;
-                            break;
-                        } else {
-                            // rotate
-                            let order = q.pop_front().unwrap();
-                            q.push_back(order);
-                        }
+    pub fn ask(&mut self, price: u64, mut qty: u32) {
+        while qty > 0 {
+            if let Some((&bid_price, &bid_qty)) = self.bids.iter().rev().next() {
+                if price <= bid_price {
+                    let trade_qty = qty.min(bid_qty);
+                    println!("Trade: {} @ {}", trade_qty, bid_price);
+
+                    if bid_qty > trade_qty {
+                        self.bids.insert(bid_price, bid_qty - trade_qty);
+                    } else {
+                        self.bids.remove(&bid_price);
                     }
+
+                    qty -= trade_qty;
+                } else {
+                    break;
                 }
-                if found {
-                    return true;
-                }
+            } else {
+                break;
             }
         }
-        false
+
+        if qty > 0 {
+            *self.asks.entry(price).or_insert(0) += qty;
+        }
+    }
+
+    pub fn print(&self) {
+        println!("Bids: {:?}", self.bids);
+        println!("Asks: {:?}", self.asks);
     }
 }
