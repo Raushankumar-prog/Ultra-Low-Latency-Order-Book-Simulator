@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
-use crate::connection::Order;
+
 
 #[derive(Debug, Default)]
 pub struct OrderBook {
-    bids: BTreeMap<u64, u32>, 
-    asks: BTreeMap<u64, u32>, 
+    pub bids: BTreeMap<u64, u32>, 
+   pub  asks: BTreeMap<u64, u32>, 
 }
 
 impl OrderBook {
