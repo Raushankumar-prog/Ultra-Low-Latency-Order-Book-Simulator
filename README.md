@@ -2,7 +2,8 @@
 
 > A high-performance matching engine experiment focusing on correctness first, then latency.
 
-![Order Book Demo](./assets/orderbook.png)
+<img width="742" height="746" alt="image" src="https://github.com/user-attachments/assets/2d6d271d-6483-47de-8f88-b808f93f5083" />
+
 
 ## 🚀 Overview
 
