@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Default)]
 pub struct OrderBook {
-    pub bids: BTreeMap<u64, u32>, 
+   pub bids: BTreeMap<u64, u32>, 
    pub  asks: BTreeMap<u64, u32>, 
 }
 
