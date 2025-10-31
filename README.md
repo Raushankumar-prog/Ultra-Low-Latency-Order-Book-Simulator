@@ -1,47 +1,96 @@
 # Ultra-Low-Latency Order Book (Rust)
 
-This project is a production-grade, ultra-low-latency order book and matching engine written in Rust.
+> A high-performance matching engine experiment focusing on correctness first, then latency.
 
-## Features
+![Order Book Demo](./assets/orderbook.png)
 
-- Fixed-size binary protocol for all messages (no JSON in hot path)
-- Multi-core sharded engine: each instrument is handled by a dedicated, single-writer thread
-- Lock-free, per-shard order book logic (no global Mutex)
-- Preallocated order books and custom fixed-size queues for all instruments
-- Cache-line alignment for all hot data structures
-- Worker threads are pinned to CPU cores for maximum cache locality
-- Hybrid spin/yield queues for ultra-low-latency inter-thread communication
-- Metrics collection (orders, cancels, trades) and logging for all key events
-- Health check HTTP endpoint (on port 8081)
-- Stubs for snapshot/recovery logic (ready for persistence)
+## 🚀 Overview
 
-## To build
+This project is a **low-latency order book and matching engine** written in Rust. It exposes a TCP binary protocol, receives orders, and processes matches in real-time.
+
+The design starts simple (single threaded, async networking) and evolves toward HFT-grade upgrades.
+
+## ✅ Current Features
+
+* Binary wire protocol (13-byte messages)
+* TCP server receiving orders
+* Matching engine with BTreeMap order book
+* Single-producer channel from network → engine
+* Simple client to send BID/ASK orders
+* Console logging for trades + book state
+
+## 🧠 Protocol Format
+
+| Field      | Type  | Meaning              |
+| ---------- | ----- | -------------------- |
+| Byte 0     | `u8`  | `0 = ASK`, `1 = BID` |
+| Bytes 1–8  | `u64` | Price (LE)           |
+| Bytes 9–12 | `u32` | Quantity (LE)        |
+
+Total: **13 bytes per order**
+
+## 🛠️ Build
 
 ```bash
-cargo build --release --bin engine
-cargo build --release --bin bench_client
+cargo build --release
 ```
 
-## To run locally
-
-1. Start engine:
+## ▶️ Run Engine (Server)
 
 ```bash
-cargo run --release --bin engine -- --port 4000
+cargo run --bin orderbook
 ```
 
-2. Start bench client:
+Expected output:
+
+```
+Server listening on 127.0.0.1:4000
+```
+
+## 💻 Run Client (Send Orders)
 
 ```bash
-cargo run --release --bin bench_client -- --addr 127.0.0.1:4000 --n 10000 --instrument 1
+cargo run --bin client
 ```
 
-## Monitoring
+Client sends BID/ASK messages and engine prints trades.
 
-- Health check: [http://localhost:8081](http://localhost:8081)
-- Metrics: see logs or extend with Prometheus/simplemetrics exporter
+## 🧪 Example Output
 
-## Extending
+```
+Trade: 10 @ 500
+Bids: {}
+Asks: {}
+```
 
-- Implement snapshot/recovery logic for persistence
-- Add more advanced monitoring or alerting as needed
+## 📂 Project Structure
+
+```
+src/
+ ├── book.rs        # Order book
+ ├── connection.rs  # TCP listener
+ ├── engine.rs      # Matching loop
+ ├── main.rs        # Launch engine
+ └── bin/
+      └── client.rs # Test order sender
+```
+
+## 🧭 Roadmap
+
+| Stage    | Goal                                             |
+| -------- | ------------------------------------------------ |
+| ✅ Now    | Functional matching engine + binary client       |
+| ⏳ Next   | Stress client (1M orders/sec), ring buffer IPC   |
+| 🔜 Later | Core-pinned threads, lock-free queues, snapshots |
+
+## ❤️ Contributing
+
+PRs welcome — especially for latency improvements.
+
+## 📜 License
+
+MIT
+
+---
+
+*For learning & performance tuning — not a trading system (yet).*
