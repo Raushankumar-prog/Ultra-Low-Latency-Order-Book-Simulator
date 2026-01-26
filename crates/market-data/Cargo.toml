@@ -1,0 +1,10 @@
+[package]
+name = "market-data"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+api = { path = "../api" }
+tokio = { workspace = true }
+crossbeam-channel = { workspace = true }
+serde = { workspace = true }

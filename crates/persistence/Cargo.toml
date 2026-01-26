@@ -1,0 +1,9 @@
+[package]
+name = "persistence"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+api = { path = "../api" }
+tokio = { workspace = true }
+bytemuck = { workspace = true }

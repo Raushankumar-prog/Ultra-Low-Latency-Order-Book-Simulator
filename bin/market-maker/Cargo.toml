@@ -1,0 +1,12 @@
+[package]
+name = "market-maker"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+api = { path = "../../crates/api" }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+bincode = { workspace = true }
+rand = { workspace = true }
+bytemuck = { workspace = true }

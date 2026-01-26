@@ -1,0 +1,10 @@
+[package]
+name = "matching-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+api = { path = "../api" }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,14 @@
+[package]
+name = "gateway"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+api = { path = "../api" }
+matching-engine = { path = "../matching-engine" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+crossbeam-channel = { workspace = true }
+rayon = { workspace = true }
+anyhow = { workspace = true }
+bytemuck = { workspace = true }

@@ -1,0 +1,9 @@
+[package]
+name = "auth"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+api = { path = "../api" }
+rand = { workspace = true }
+# Add ed25519-dalek later

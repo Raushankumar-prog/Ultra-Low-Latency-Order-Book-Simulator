@@ -1,0 +1,18 @@
+[package]
+name = "exchange"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gateway = { path = "../../crates/gateway" }
+matching-engine = { path = "../../crates/matching-engine" }
+telemetry = { path = "../../crates/telemetry" }
+auth = { path = "../../crates/auth" }
+market-data = { path = "../../crates/market-data" }
+persistence = { path = "../../crates/persistence" }
+surveillance = { path = "../../crates/surveillance" }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+crossbeam-channel = { workspace = true }
+risk = { path = "../../crates/risk" }
