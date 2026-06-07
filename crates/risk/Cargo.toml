@@ -1,8 +1,0 @@
-[package]
-name = "risk"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-api = { path = "../api" }
-anyhow = { workspace = true }

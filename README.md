@@ -1,36 +1,142 @@
-# Ultra-Low-Latency Order Book Simulator (v2)
+# Ultra-Low-Latency Order Book Simulator (v3)
 
-> A high-performance, event-driven trading exchange written in Rust.
-> Designed for correct High-Frequency Trading (HFT) architecture: sequential risk checks, deterministic matching, and crash recovery.
+> A high-performance, event-driven multi-asset trading exchange written in Rust.
+> Designed for correct HFT architecture: kernel-bypass networking, lock-free data structures, deterministic matching, and crash recovery.
 
 ## 🚀 Overview
 
-This engine implements a **Staged Event-Driven Architecture (SEDA)**. It separates concerns into distinct stages (Ingress -> Core -> Egress) to maximize throughput and safety.
+This engine implements a **Staged Event-Driven Architecture (SEDA)** with kernel-bypass I/O and a parallel per-asset matching pipeline.
 
-In **v2**, we have introduced the "Gatekeeper" architecture:
-1.  **Ingress (Gateway):** Generic fix-sized 48-byte packets over TCP.
-2.  **Risk Engine (Core):** Pre-trade validation (Cash & Inventory checks) in the hot path.
-3.  **Matching Engine (Core):** Price-Time priority matching returning `Trade` events.
-4.  **Settlement (Core):** Atomic post-trade fund/asset transfers.
-5.  **Persistence (WAL):** Write-Ahead Logging for zero-data-loss crash recovery.
+```
+                    ┌─────────────────┐
+                    │     Clients     │
+                    └────────┬────────┘
+                             │
+                        QUIC / TCP
+                             │
+                             ▼
+                ┌────────────────────────┐
+                │ AF_XDP / DPDK Fetch    │
+                │ Kernel Bypass Network  │
+                └──────────┬─────────────┘
+                           │
+                           ▼
+                ┌────────────────────────┐
+                │ Lock-Free Ring Buffer  │
+                └──────────┬─────────────┘
+                           │
+                           ▼
+                ┌────────────────────────┐
+                │ Transaction Validation │
+                │ SIMD Verification      │
+                └──────────┬─────────────┘
+                           │
+                           ▼
+                ┌────────────────────────┐
+                │ Sequencer              │
+                │ Global Sequence IDs    │
+                └──────────┬─────────────┘
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+              ▼                         ▼
+
+   ┌──────────────────┐      ┌──────────────────┐
+   │ Deterministic    │      │ WAL / Event Log  │
+   │ Replay Recorder  │      │ Append Only      │
+   └──────────────────┘      └────────┬─────────┘
+                                       │
+                                       ▼
+                ┌────────────────────────┐
+                │ Dependency Scheduler   │
+                │ Worker Pool            │
+                └──────────┬─────────────┘
+                           │
+         ┌─────────────────┼─────────────────┐
+         ▼                 ▼                 ▼
+
+ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+ │ BTC Engine   │ │ ETH Engine   │ │ SOL Engine   │
+ │ Lock-Free    │ │ Lock-Free    │ │ Lock-Free    │
+ │ Order Book   │ │ Order Book   │ │ Order Book   │
+ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+        │                │                │
+        └────────────────┼────────────────┘
+                         ▼
+
+              ┌───────────────────────┐
+              │ AccountDB             │
+              │ Zero Allocation Path  │
+              │ Memory Optimized      │
+              └──────────┬────────────┘
+                         │
+            ┌────────────┼────────────┐
+            ▼                         ▼
+
+ ┌──────────────────┐     ┌──────────────────┐
+ │ Snapshot Engine  │     │ Market Data      │
+ │ Full Snapshot    │     │ Publisher        │
+ │ Incremental Snap │     │ Trades / Depth   │
+ └────────┬─────────┘     └────────┬─────────┘
+          │                        │
+          ▼                        ▼
+
+ ┌──────────────────┐     ┌──────────────────┐
+ │ Recovery System  │     │ QUIC / WebSocket │
+ │ Snapshot + WAL   │     │ Broadcast        │
+ └──────────────────┘     └──────────────────┘
+
+
+ ┌──────────────────────────────────────────────┐
+ │ Telemetry / Profiling                        │
+ │ p50 / p95 / p99 latency                      │
+ │ Throughput, Queue Depth                      │
+ │ CPU Cycles, Cache Misses                     │
+ │ Flamegraphs, eBPF Metrics                    │
+ └──────────────────────────────────────────────┘
+
+
+ ┌──────────────────────────────────────────────┐
+ │ Optional Future Modules                      │
+ │ -------------------------------------------- │
+ │ GPU Signature Verification                   │
+ │ GPU Risk Calculations                        │
+ │ NUMA-Aware Sharding                          │
+ │ Replication / Consensus Layer                │
+ │ FPGA / SmartNIC Acceleration                 │
+ └──────────────────────────────────────────────┘
+```
 
 ## ✅ Features
 
-*   **Zero-Copy Networking:** Uses `bytemuck` to cast TCP bytes directly to sized structs.
-*   **Split-Thread Model:**
-    *   `Gateway` runs on `tokio` (Async I/O).
-    *   `Core` (Risk + Match + Settle) runs on a pinned OS Thread (CPU-bound).
-*   **Risk Engine:**
-    *   Enforces `Account.usd >= Cost` for Buys.
-    *   Enforces `Account.btc >= Qty` for Sells.
-    *   Prevents Self-Trading.
-*   **Persistence:**
-    *   Append-only Write-Ahead Log (`orders.wal`).
-    *   Replay mechanism on startup.
+**Networking**
+- **Kernel-Bypass I/O:** AF_XDP / DPDK support — packets go from NIC directly to userspace, skipping the kernel network stack entirely.
+- **Lock-Free Ring Buffer:** Ingress packets land in a wait-free SPSC/MPSC ring, eliminating contention between the I/O thread and the processing pipeline.
+- **QUIC / TCP Transport:** Both connection-oriented transports supported for client connectivity.
+
+**Processing Pipeline**
+- **SIMD Transaction Validation:** Batch signature/checksum verification using CPU vector instructions for high throughput.
+- **Global Sequencer:** Assigns monotonically increasing sequence IDs before any order touches the books, guaranteeing total ordering across all assets.
+- **Dependency Scheduler + Worker Pool:** Detects order-level dependencies and dispatches independent orders to a pinned thread pool for parallel execution.
+
+**Matching Engines**
+- **Per-Asset Lock-Free Order Books:** BTC, ETH, and SOL each run on an isolated lock-free book — no cross-asset contention.
+- **Price-Time Priority Matching:** Deterministic FIFO matching within price levels.
+- **Zero-Allocation AccountDB:** Settlement reads and writes go through a memory-optimized account store with no heap allocation in the hot path.
+
+**Persistence & Recovery**
+- **Append-Only WAL / Event Log:** Every sequenced order is durably written before matching.
+- **Deterministic Replay Recorder:** The full event stream is captured in replay-compatible format for post-trade analysis and crash recovery.
+- **Snapshot Engine:** Both full and incremental snapshots of order book state. Recovery combines the latest snapshot with subsequent WAL entries.
+
+**Market Data & Observability**
+- **Market Data Publisher:** Real-time trade and depth feed produced after each match.
+- **QUIC / WebSocket Broadcast:** Low-latency dissemination to downstream subscribers.
+- **Telemetry:** p50/p95/p99 latency histograms, throughput counters, queue depths, CPU cycle counts, cache miss rates, flamegraph hooks, and eBPF-based kernel metrics.
 
 ## 🛠️ Build
 
-```powershell
+```bash
 cargo build --release
 ```
 
@@ -39,53 +145,65 @@ cargo build --release
 You need two terminals to simulate a market.
 
 ### 1. Start the Exchange
-This process hosts the Matching Engine, Risk Engine, and TCP Gateway.
-```powershell
+
+```bash
 cargo run --bin exchange
 ```
-*Listens on `127.0.0.1:4000`*
+
+Starts the full pipeline: kernel-bypass ingress → sequencer → dependency scheduler → matching engines → settlement → WAL → market data publisher. Listens on `127.0.0.1:4000`.
 
 ### 2. Start the Market Maker
-This simulated client connects to the exchange and places alternating Buy/Sell orders to generate liquidity.
-```powershell
+
+```bash
 cargo run --bin market-maker
 ```
 
-## 🧠 Protocol Format (v2)
+Simulated client that connects and places alternating Buy/Sell orders across supported assets to generate liquidity.
 
-All messages are **fixed 48 bytes** (Zero-Copy friendly).
+## 🧠 Protocol Format
 
-| Field        | Type      | Size | Description |
-| ------------ | --------- | ---- | ----------- |
-| `id`         | `u64`     | 8    | Unique Order ID |
-| `price`      | `u64`     | 8    | Price in cents ($100.00 = 10000) |
-| `qty`        | `u64`     | 8    | Quantity in Satoshis |
-| `user_id`    | `u64`     | 8    | Trader ID |
-| `company_id` | `u64`     | 8    | Clearing Firm ID |
-| `side`       | `u8`      | 1    | `0` = Buy, `1` = Sell |
-| `_padding`   | `[u8; 7]` | 7    | Explicit padding to align to 48 bytes |
+All messages are **fixed 48 bytes** — zero-copy friendly, cast directly from the wire via `bytemuck`.
+
+| Field        | Type      | Size | Description                        |
+| ------------ | --------- | ---- | ---------------------------------- |
+| `id`         | `u64`     | 8    | Unique Order ID                    |
+| `price`      | `u64`     | 8    | Price in cents ($100.00 = 10000)   |
+| `qty`        | `u64`     | 8    | Quantity in Satoshis               |
+| `user_id`    | `u64`     | 8    | Trader ID                          |
+| `company_id` | `u64`     | 8    | Clearing Firm ID                   |
+| `side`       | `u8`      | 1    | `0` = Buy, `1` = Sell              |
+| `_padding`   | `[u8; 7]` | 7    | Explicit padding to reach 48 bytes |
 
 ## 📂 Project Structure
 
 ```
 .
 ├── bin/
-│   ├── exchange/       # Main Server (Gateway + Core Thread)
-│   └── market-maker/   # Test Client
+│   ├── exchange/           # Main server — full pipeline
+│   └── market-maker/       # Test client
 ├── crates/
-│   ├── api/            # Shared Data Structures (Order, Trade)
-│   ├── gateway/        # Tokio TCP Ingress
-│   ├── matching-engine/# Order Book Logic (BTreeMap)
-│   ├── risk/           # Pre-trade Checks & Settlement
-│   ├── persistence/    # Write-Ahead Log (WAL)
-│   └── ...             # (auth, market-data, etc.)
+│   ├── api/                # Shared types (Order, Trade, Account)
+│   ├── gateway/            # AF_XDP / DPDK ingress + ring buffer
+│   ├── validator/          # SIMD transaction verification
+│   ├── sequencer/          # Global sequence ID assignment
+│   ├── scheduler/          # Dependency analysis + worker pool dispatch
+│   ├── matching-engine/    # Per-asset lock-free order books (BTreeMap)
+│   ├── account-db/         # Zero-allocation settlement store
+│   ├── persistence/        # WAL + deterministic replay recorder
+│   ├── snapshot/           # Full + incremental snapshot engine
+│   ├── market-data/        # Trade/depth feed publisher
+│   ├── broadcast/          # QUIC / WebSocket dissemination
+│   └── telemetry/          # Latency histograms, eBPF metrics, flamegraphs
 ```
 
 ## 🧭 Roadmap
 
-| Stage    | Goal                                             | Status |
-| -------- | ------------------------------------------------ | ------ |
-| ✅ v1     | Basic Matching Engine                            | Done   |
-| ✅ v2     | Risk Engine, Settlement, Persistence (WAL)       | **Current** |
-| ⏳ v3     | Market Data Broadcaster (UDP Multicast)          | Next   |
-| 🔜 v4     | GPU Batch Signature Verification                 | Future |
+| Stage | Goal                                                              | Status          |
+| ----- | ----------------------------------------------------------------- | --------------- |
+| ✅ v1  | Basic Matching Engine                                             | Done            |
+| ✅ v2  | Risk Engine, Settlement, Persistence (WAL)                        | Done            |
+| ✅ v3  | Kernel-Bypass (AF_XDP/DPDK), SIMD Validation, Sequencer, Multi-Asset Lock-Free Books, Snapshot + Recovery, Market Data Broadcast, Telemetry                          | **Current** |
+| 🔜 v4  | GPU Signature Verification, GPU Risk Calculations                 | Next            |
+| 🔜 v5  | NUMA-Aware Sharding, FPGA/SmartNIC Acceleration, Replication/Consensus | Future     |
+
+
