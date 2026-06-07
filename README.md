@@ -14,9 +14,9 @@ This engine implements a **Staged Event-Driven Architecture (SEDA)** with kernel
                              │
                         QUIC / TCP
                              │
-                            |
-                           │
-                           ▼
+                             |
+                             │
+                             ▼
                 ┌────────────────────────┐
                 │ Lock-Free Ring Buffer  │
                 └──────────┬─────────────┘

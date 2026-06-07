@@ -5,13 +5,12 @@ members = [
     "crates/gateway",
     "crates/matching-engine",
     "crates/telemetry",
-    "crates/auth",
     "crates/risk",
     "crates/market-data",
     "crates/persistence",
     "crates/surveillance",
     "bin/market-maker",
-    "bin/exchange",
+    "bin/exchange", "crates/validator", "crates/squencer",
 ]
 
 [workspace.package]
