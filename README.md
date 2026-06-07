@@ -14,11 +14,7 @@ This engine implements a **Staged Event-Driven Architecture (SEDA)** with kernel
                              │
                         QUIC / TCP
                              │
-                             ▼
-                ┌────────────────────────┐
-                │ AF_XDP / DPDK Fetch    │
-                │ Kernel Bypass Network  │
-                └──────────┬─────────────┘
+                            |
                            │
                            ▼
                 ┌────────────────────────┐
