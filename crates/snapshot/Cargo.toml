@@ -1,0 +1,6 @@
+[package]
+name = "snapshot"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
