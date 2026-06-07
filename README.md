@@ -44,7 +44,7 @@ This engine implements a **Staged Event-Driven Architecture (SEDA)** with kernel
                                        │
                                        ▼
                 ┌────────────────────────┐
-                │ Dependency Scheduler   │
+                │  │
                 │ Worker Pool            │
                 └──────────┬─────────────┘
                            │

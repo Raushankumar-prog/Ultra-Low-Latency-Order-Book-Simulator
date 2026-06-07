@@ -10,7 +10,7 @@ members = [
     "crates/persistence",
     "crates/surveillance",
     "bin/market-maker",
-    "bin/exchange", "crates/validator", "crates/squencer",
+    "bin/exchange", "crates/validator", "crates/squencer", "crates/scheduler",
 ]
 
 [workspace.package]
