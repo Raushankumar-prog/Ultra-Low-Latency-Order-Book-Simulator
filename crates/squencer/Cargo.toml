@@ -1,6 +1,0 @@
-[package]
-name = "squencer"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
